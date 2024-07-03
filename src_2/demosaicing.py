@@ -1,28 +1,50 @@
 import numpy as np
-from scipy.interpolate import RegularGridInterpolator
+from scipy.interpolate import RectBivariateSpline
 
 def demosaic(image_linear, bayer_pattern):
-    # Extract the color channels from the Bayer pattern
-    # The bayer_pattern should be a string like 'rggb', 'bggr', etc.
-    # Implement the extraction based on the provided bayer_pattern
-    # For simplicity, here's an example assuming 'rggb'
-    red_channel = image_linear[0::2, 0::2]
-    green_channel_r = image_linear[0::2, 1::2]
-    green_channel_b = image_linear[1::2, 0::2]
-    blue_channel = image_linear[1::2, 1::2]
+    if bayer_pattern == 'rggb':
+        red_channel = image_linear[0::2, 0::2]
+        if red_channel.ndim > 2:
+            red_channel = red_channel[:, :, 0]
+        green_channel_r = image_linear[0::2, 1::2]
+        if green_channel_r.ndim > 2:
+            green_channel_r = green_channel_r[:, :, 0]
+        green_channel_b = image_linear[1::2, 0::2]
+        if green_channel_b.ndim > 2:
+            green_channel_b = green_channel_b[:, :, 0]
+        blue_channel = image_linear[1::2, 1::2]
+        if blue_channel.ndim > 2:
+            blue_channel = blue_channel[:, :, 0]
+    else:
+        raise ValueError("Unsupported Bayer pattern")
 
-    # Interpolate the missing values in each color channel
-    # Implement interpolation based on the provided bayer_pattern
-    # For simplicity, here's an example assuming 'rggb'
-    interpolate_red = RegularGridInterpolator((np.arange(red_channel.shape[0]), np.arange(red_channel.shape[1])), red_channel)
-    interpolate_blue = RegularGridInterpolator((np.arange(blue_channel.shape[0]), np.arange(blue_channel.shape[1])), blue_channel)
+    height_r, width_r = red_channel.shape
+    height_gr, width_gr = green_channel_r.shape
+    height_gb, width_gb = green_channel_b.shape
+    height_b, width_b = blue_channel.shape
 
-    x_new = np.linspace(0, red_channel.shape[1]-1, image_linear.shape[1])
-    y_new = np.linspace(0, red_channel.shape[0]-1, image_linear.shape[0])
-    x_mesh, y_mesh = np.meshgrid(x_new, y_new, indexing='xy')
+    x_r = np.arange(width_r)
+    y_r = np.arange(height_r)
+    x_gr = np.arange(width_gr)
+    y_gr = np.arange(height_gr)
+    x_gb = np.arange(width_gb)
+    y_gb = np.arange(height_gb)
+    x_b = np.arange(width_b)
+    y_b = np.arange(height_b)
+    x_full = np.arange(image_linear.shape[1])
+    y_full = np.arange(image_linear.shape[0])
 
-    red_interpolated = interpolate_red((y_mesh, x_mesh))
-    blue_interpolated = interpolate_blue((y_mesh, x_mesh))
-    green_interpolated = (green_channel_r + green_channel_b) / 2
+    interpolate_red = RectBivariateSpline(y_r, x_r, red_channel)
+    interpolate_green_r = RectBivariateSpline(y_gr, x_gr, green_channel_r)
+    interpolate_green_b = RectBivariateSpline(y_gb, x_gb, green_channel_b)
+    interpolate_blue = RectBivariateSpline(y_b, x_b, blue_channel)
 
-    return np.dstack((red_interpolated, green_interpolated, blue_interpolated))
+    red_interpolated = interpolate_red(y_full, x_full)
+    green_interpolated_r = interpolate_green_r(y_full, x_full)
+    green_interpolated_b = interpolate_green_b(y_full, x_full)
+    blue_interpolated = interpolate_blue(y_full, x_full)
+
+    green_interpolated = (green_interpolated_r + green_interpolated_b) / 2
+
+    image_rgb = np.stack((red_interpolated, green_interpolated, blue_interpolated), axis=-1)
+    return image_rgb
